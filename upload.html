@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Scanner (Upload Image)</title>
+    <script src="https://unpkg.com/html5-qrcode" defer></script>
+</head>
+<body>
+
+    <h2>Upload a QR Code Image</h2>
+    <input type="file" id="qr-input-file" accept="image/*">
+    <div id="qr-reader-results" style="margin-top: 20px; font-size: 18px; font-weight: bold;"></div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            console.log("Page loaded, setting up QR scanner...");
+
+            document.getElementById('qr-input-file').addEventListener('change', function (event) {
+                if (event.target.files.length === 0) {
+                    console.log("No file selected.");
+                    return;
+                }
+
+                const imageFile = event.target.files[0];
+                console.log("Scanning file:", imageFile);
+
+                const html5QrCode = new Html5Qrcode("qr-reader-results");
+
+                html5QrCode.scanFile(imageFile, true)
+                    .then(decodedText => {
+                        console.log("QR Code Detected:", decodedText);
+                        document.getElementById('qr-reader-results').innerText = "QR Code Data: " + decodedText;
+                    })
+                    .catch(err => {
+                        console.error("QR Code scan failed:", err);
+                        document.getElementById('qr-reader-results').innerText = "No QR Code detected.";
+                    });
+            });
+        });
+    </script>
+
+</body>
+</html>

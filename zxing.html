@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZXing.js Barcode Scanner</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #scanner-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        video {
+            width: 100%;
+            border: 1px solid #ccc;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 15px;
+            margin: 10px 0;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #3b78e7;
+        } 
+        #sourceSelectPanel {
+            margin-bottom: 10px;
+        }
+        .status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>ZXing.js Barcode Scanner</h1>
+    
+    <div id="sourceSelectPanel" style="display:none">
+        <label for="sourceSelect">Change video source:</label>
+        <select id="sourceSelect" style="max-width:400px"></select>
+    </div>
+    
+    <div id="scanner-container">
+        <video id="video" width="500" height="375"></video>
+    </div>
+    
+    <div>
+        <button id="startButton">Start</button>
+        <button id="resetButton" disabled>Reset</button>
+    </div>
+    
+    <div class="status" id="status">Ready to scan. Click Start to begin.</div>
+    
+    <div id="result">
+        <h3>Scan Result:</h3>
+        <p id="result-text">No barcode detected yet</p>
+        <p id="result-format"></p>
+    </div>
+
+    <script>
+        // First, dynamically load the ZXing library
+        function loadScript(url) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = url;
+                script.onload = resolve;
+                script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
+                document.head.appendChild(script);
+            });
+        }
+
+        // Suppress ZXing's default console logger
+        window.console.debug = () => {}; // This will prevent most of the not found messages
+
+        // Try loading from preferred CDN
+        loadScript('https://unpkg.com/@zxing/library@latest')
+            .catch(() => loadScript('https://cdn.jsdelivr.net/npm/@zxing/library@latest'))
+            .then(() => {
+                initApp();
+            })
+            .catch(error => {
+                document.getElementById('status').textContent = 'Error: Failed to load barcode scanning library.';
+                document.getElementById('status').style.color = 'red';
+            });
+
+        function initApp() {
+            const startButton = document.getElementById('startButton');
+            const resetButton = document.getElementById('resetButton');
+            const resultText = document.getElementById('result-text');
+            const resultFormat = document.getElementById('result-format');
+            const statusElement = document.getElementById('status');
+            let selectedDeviceId;
+            let codeReader;
+            
+            try {
+                // Create reader with reduced logging
+                if (typeof ZXing !== 'undefined') {
+                    codeReader = new ZXing.BrowserMultiFormatReader(null, { disableLogging: true });
+                } else if (typeof window.ZXing !== 'undefined') {
+                    codeReader = new window.ZXing.BrowserMultiFormatReader(null, { disableLogging: true });
+                } else {
+                    throw new Error('ZXing not found');
+                }
+                statusElement.textContent = 'Scanner ready. Click Start to begin.';
+            } catch (error) {
+                statusElement.textContent = 'Error: Could not initialize barcode scanner.';
+                statusElement.style.color = 'red';
+                return;
+            }
+            
+            startButton.addEventListener('click', () => {
+                statusElement.textContent = 'Accessing camera...';
+                
+                codeReader.listVideoInputDevices()
+                    .then((videoInputDevices) => {
+                        if (videoInputDevices.length === 0) {
+                            statusElement.textContent = 'No camera found.';
+                            statusElement.style.color = 'red';
+                            return;
+                        }
+                        
+                        const sourceSelect = document.getElementById('sourceSelect');
+                        sourceSelect.innerHTML = '';
+                        selectedDeviceId = videoInputDevices[0].deviceId;
+                        
+                        if (videoInputDevices.length > 1) {
+                            videoInputDevices.forEach((device) => {
+                                const sourceOption = document.createElement('option');
+                                sourceOption.text = device.label || `Camera ${sourceSelect.length + 1}`;
+                                sourceOption.value = device.deviceId;
+                                sourceSelect.appendChild(sourceOption);
+                            });
+                            
+                            sourceSelect.onchange = () => {
+                                selectedDeviceId = sourceSelect.value;
+                                resetScanner();
+                                startScanner();
+                            };
+                            
+                            document.getElementById('sourceSelectPanel').style.display = 'block';
+                        }
+                        
+                        startScanner();
+                    })
+                    .catch((err) => {
+                        statusElement.textContent = 'Error accessing camera: ' + err.message;
+                        statusElement.style.color = 'red';
+                    });
+            });
+            
+            resetButton.addEventListener('click', () => {
+                resetScanner();
+            });
+            
+            // Variable to track last error time to prevent too many error messages
+            let lastErrorLogTime = 0;
+            
+            function startScanner() {
+                codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
+                    if (result) {
+                        // Only log successful detections
+                        resultText.textContent = result.text;
+                        resultFormat.textContent = 'Format: ' + result.format;
+                        statusElement.textContent = 'Barcode detected!';
+                        statusElement.style.color = 'green';
+                        
+                        // Optionally stop scanner after successful detection
+                        // resetScanner();
+                    }
+                    
+                    // Significantly reduce error logging
+                    if (err && !(err.name === 'NotFoundException' || 
+                                 err.message.includes('not found') ||
+                                 err.message.includes('No MultiFormat'))) {
+                        // Throttle error logging to once per second maximum
+                        const now = Date.now();
+                        if (now - lastErrorLogTime > 1000) {
+                            lastErrorLogTime = now;
+                            statusElement.textContent = 'Error: ' + err.message;
+                            statusElement.style.color = 'red';
+                        }
+                    }
+                });
+                
+                statusElement.textContent = 'Scanner running. Point camera at a barcode.';
+                statusElement.style.color = 'blue';
+                startButton.disabled = true;
+                resetButton.disabled = false;
+            }
+            
+            function resetScanner() {
+                codeReader.reset();
+                resultText.textContent = 'No barcode detected yet';
+                resultFormat.textContent = '';
+                statusElement.textContent = 'Scanner stopped. Click Start to begin again.';
+                statusElement.style.color = '';
+                resetButton.disabled = true;
+                startButton.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

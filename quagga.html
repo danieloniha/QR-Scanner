@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuaggaJS Barcode Scanner</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        
+        #scanner-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            overflow: hidden;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        #interactive.viewport {
+            position: relative;
+            width: 100%;
+            height: 300px;
+            background: #000;
+        }
+        
+        #interactive.viewport video, #interactive.viewport canvas {
+            width: 100%;
+            height: 100%;
+        }
+        
+        #interactive.viewport canvas.drawingBuffer {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        
+        .scanner-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.3);
+            z-index: 10;
+        }
+        
+        .scanner-laser {
+            position: absolute;
+            width: 80%;
+            height: 2px;
+            left: 10%;
+            background: rgba(255, 0, 0, 0.7);
+            z-index: 11;
+            box-shadow: 0 0 4px rgba(255, 0, 0, 0.5);
+            animation: scan 2s infinite;
+        }
+        
+        @keyframes scan {
+            0% { top: 30%; }
+            50% { top: 70%; }
+            100% { top: 30%; }
+        }
+        
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        button {
+            padding: 10px 15px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #2980b9;
+        }
+        
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 4px;
+            background: #f8f9fa;
+            text-align: center;
+            font-style: italic;
+            color: #666;
+        }
+        
+        .result-container {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        
+        .result-title {
+            margin-top: 0;
+            color: #2c3e50;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        
+        .detected-barcode {
+            padding: 10px;
+            margin-top: 10px;
+            background: #e8f4fd;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .detected-barcode:empty {
+            display: none;
+        }
+        
+        .settings {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .settings h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        select, input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+        }
+        
+        .camera-selection {
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <h1>QuaggaJS Barcode Scanner</h1>
+    
+    <div class="camera-selection" id="sourceSelectPanel" style="display:none">
+        <label for="sourceSelect">Camera: </label>
+        <select id="sourceSelect"></select>
+    </div>
+    
+    <div id="scanner-container">
+        <div id="interactive" class="viewport">
+            <div class="scanner-overlay" style="display: none;">
+                <div class="scanner-laser"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <button id="startButton">Start Scanner</button>
+        <button id="stopButton" disabled>Stop Scanner</button>
+    </div>
+    
+    <div class="status" id="status">Ready to scan. Click Start Scanner to begin.</div>
+    
+    <div class="result-container">
+        <h3 class="result-title">Scan Results</h3>
+        <div id="result">No barcode detected yet</div>
+        
+        <div id="barcode-history"></div>
+    </div>
+    
+    <div class="settings">
+        <h3>Scanner Settings</h3>
+        
+        <div class="setting-row">
+            <label for="reader-type">Reader Type:</label>
+            <select id="reader-type">
+                <option value="ean">EAN/UPC (Product Barcodes)</option>
+                <option value="code_128">Code 128</option>
+                <option value="code_39">Code 39</option>
+                <option value="code_93">Code 93</option>
+                <option value="all">Detect All Types</option>
+            </select>
+        </div>
+        
+        <div class="setting-row">
+            <label for="resolution">Camera Resolution:</label>
+            <select id="resolution">
+                <option value="640x480">Standard (640x480)</option>
+                <option value="1280x720" selected>HD (1280x720)</option>
+                <option value="1920x1080">Full HD (1920x1080)</option>
+            </select>
+        </div>
+        
+        <div class="setting-row">
+            <label for="frequency">Scan Frequency:</label>
+            <select id="frequency">
+                <option value="fast">Fast (High CPU)</option>
+                <option value="normal" selected>Normal</option>
+                <option value="slow">Slow (Battery Saving)</option>
+            </select>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const statusElement = document.getElementById('status');
+            const resultElement = document.getElementById('result');
+            const barcodeHistoryElement = document.getElementById('barcode-history');
+            const readerTypeSelect = document.getElementById('reader-type');
+            const resolutionSelect = document.getElementById('resolution');
+            const frequencySelect = document.getElementById('frequency');
+            const sourceSelectPanel = document.getElementById('sourceSelectPanel');
+            const sourceSelect = document.getElementById('sourceSelect');
+            const scannerOverlay = document.querySelector('.scanner-overlay');
+            
+            let lastResult = null;
+            let scanning = false;
+            
+            // Check if Quagga is loaded
+            if (typeof Quagga === 'undefined') {
+                statusElement.textContent = 'Error: QuaggaJS library not loaded';
+                statusElement.style.color = 'red';
+                startButton.disabled = true;
+                return;
+            }
+            
+            // List available cameras
+            if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+                navigator.mediaDevices.enumerateDevices()
+                    .then(devices => {
+                        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                        if (videoDevices.length > 1) {
+                            videoDevices.forEach((device, index) => {
+                                const option = document.createElement('option');
+                                option.value = device.deviceId;
+                                option.text = device.label || `Camera ${index + 1}`;
+                                sourceSelect.appendChild(option);
+                            });
+                            sourceSelectPanel.style.display = 'block';
+                            
+                            sourceSelect.addEventListener('change', function() {
+                                if (scanning) {
+                                    stopScanner();
+                                    startScanner();
+                                }
+                            });
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error listing cameras: ", err);
+                    });
+            }
+            
+            startButton.addEventListener('click', function() {
+                startScanner();
+            });
+            
+            stopButton.addEventListener('click', function() {
+                stopScanner();
+            });
+            
+            readerTypeSelect.addEventListener('change', function() {
+                if (scanning) {
+                    stopScanner();
+                    startScanner();
+                }
+            });
+            
+            resolutionSelect.addEventListener('change', function() {
+                if (scanning) {
+                    stopScanner();
+                    startScanner();
+                }
+            });
+            
+            frequencySelect.addEventListener('change', function() {
+                if (scanning) {
+                    stopScanner();
+                    startScanner();
+                }
+            });
+            
+            function startScanner() {
+                // Parse selected resolution
+                const [width, height] = resolutionSelect.value.split('x').map(Number);
+                
+                // Determine scan frequency
+                let frequency;
+                switch (frequencySelect.value) {
+                    case 'fast':
+                        frequency = 10;
+                        break;
+                    case 'slow':
+                        frequency = 3;
+                        break;
+                    default:
+                        frequency = 5;
+                }
+                
+                // Get selected reader type
+                const readerType = readerTypeSelect.value;
+                
+                // Configure barcode decoder based on selected type
+                let decoder = {};
+                let readers = [];
+                
+                if (readerType === 'all') {
+                    readers = [
+                        'ean_reader',
+                        'ean_8_reader',
+                        'code_128_reader',
+                        'code_39_reader',
+                        'code_93_reader',
+                        'upc_reader',
+                        'upc_e_reader'
+                    ];
+                } else if (readerType === 'ean') {
+                    readers = [
+                        'ean_reader',
+                        'ean_8_reader',
+                        'upc_reader',
+                        'upc_e_reader'
+                    ];
+                } else if (readerType === 'code_128') {
+                    readers = ['code_128_reader'];
+                } else if (readerType === 'code_39') {
+                    readers = ['code_39_reader'];
+                } else if (readerType === 'code_93') {
+                    readers = ['code_93_reader'];
+                }
+                
+                decoder.readers = readers;
+                
+                // Get camera constraints
+                const constraints = {
+                    width,
+                    height,
+                    facingMode: "environment"
+                };
+                
+                // If a specific camera is selected, use it
+                if (sourceSelect.value) {
+                    constraints.deviceId = sourceSelect.value;
+                    delete constraints.facingMode;
+                }
+                
+                statusElement.textContent = "Starting scanner...";
+                
+                Quagga.init({
+                    inputStream: {
+                        name: "Live",
+                        type: "LiveStream",
+                        target: document.querySelector('#interactive'),
+                        constraints
+                    },
+                    frequency: frequency,
+                    decoder: {
+                        readers: readers,
+                        multiple: false
+                    },
+                    locator: {
+                        patchSize: "medium",
+                        halfSample: true
+                    },
+                    numOfWorkers: 4,
+                    locate: true
+                }, function(err) {
+                    if (err) {
+                        statusElement.textContent = `Scanner error: ${err}`;
+                        statusElement.style.color = 'red';
+                        return;
+                    }
+                    
+                    Quagga.start();
+                    scanning = true;
+                    scannerOverlay.style.display = 'block';
+                    statusElement.textContent = "Scanner running. Point camera at a barcode.";
+                    statusElement.style.color = 'blue';
+                    startButton.disabled = true;
+                    stopButton.disabled = false;
+                });
+                
+                Quagga.onDetected(function(result) {
+                    const code = result.codeResult.code;
+                    const format = result.codeResult.format;
+                    
+                    if (code !== lastResult) {
+                        lastResult = code;
+                        
+                        // Display result
+                        resultElement.innerHTML = `
+                            <div class="detected-barcode">
+                                <div>
+                                    <strong>Code:</strong> ${code}<br>
+                                    <strong>Format:</strong> ${format}
+                                </div>
+                                <div>
+                                    <button class="copy-btn" data-code="${code}">Copy</button>
+                                </div>
+                            </div>
+                        `;
+                        
+                        // Add to history
+                        const historyItem = document.createElement('div');
+                        historyItem.className = 'detected-barcode';
+                        historyItem.innerHTML = `
+                            <div>
+                                <strong>Code:</strong> ${code}<br>
+                                <strong>Format:</strong> ${format}
+                            </div>
+                            <div>
+                                <button class="copy-btn" data-code="${code}">Copy</button>
+                            </div>
+                        `;
+                        barcodeHistoryElement.prepend(historyItem);
+                        
+                        // Limit history to last 5 scans
+                        if (barcodeHistoryElement.children.length > 5) {
+                            barcodeHistoryElement.removeChild(barcodeHistoryElement.lastChild);
+                        }
+                        
+                        // Play sound
+                        beepSuccess();
+                        
+                        // Setup copy buttons
+                        document.querySelectorAll('.copy-btn').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const codeToCopy = this.getAttribute('data-code');
+                                navigator.clipboard.writeText(codeToCopy)
+                                    .then(() => {
+                                        this.textContent = 'Copied!';
+                                        setTimeout(() => {
+                                            this.textContent = 'Copy';
+                                        }, 2000);
+                                    })
+                                    .catch(err => {
+                                        console.error('Could not copy text: ', err);
+                                    });
+                            });
+                        });
+                    }
+                });
+                
+                // Use processed image for visualization
+                Quagga.onProcessed(function(result) {
+                    const drawingCtx = Quagga.canvas.ctx.overlay;
+                    const drawingCanvas = Quagga.canvas.dom.overlay;
+                    
+                    if (result) {
+                        if (result.boxes) {
+                            drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width")), parseInt(drawingCanvas.getAttribute("height")));
+                            result.boxes.filter(box => box !== result.box).forEach(box => {
+                                Quagga.ImageDebug.drawPath(box, {x: 0, y: 1}, drawingCtx, {color: "yellow", lineWidth: 2});
+                            });
+                        }
+                        
+                        if (result.box) {
+                            Quagga.ImageDebug.drawPath(result.box, {x: 0, y: 1}, drawingCtx, {color: "green", lineWidth: 2});
+                        }
+                        
+                        if (result.codeResult && result.codeResult.code) {
+                            Quagga.ImageDebug.drawPath(result.line, {x: 'x', y: 'y'}, drawingCtx, {color: "red", lineWidth: 3});
+                        }
+                    }
+                });
+            }
+            
+            function stopScanner() {
+                if (scanning) {
+                    Quagga.stop();
+                    scanning = false;
+                    scannerOverlay.style.display = 'none';
+                    statusElement.textContent = "Scanner stopped. Click Start Scanner to begin again.";
+                    statusElement.style.color = '';
+                    startButton.disabled = false;
+                    stopButton.disabled = true;
+                    lastResult = null;
+                }
+            }
+            
+            function beepSuccess() {
+                try {
+                    const context = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = context.createOscillator();
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(1800, context.currentTime);
+                    
+                    const gainNode = context.createGain();
+                    gainNode.gain.setValueAtTime(0, context.currentTime);
+                    gainNode.gain.linearRampToValueAtTime(0.3, context.currentTime + 0.01);
+                    gainNode.gain.linearRampToValueAtTime(0, context.currentTime + 0.2);
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(context.destination);
+                    
+                    oscillator.start();
+                    oscillator.stop(context.currentTime + 0.2);
+                } catch (e) {
+                    console.error("Beep error: ", e);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
